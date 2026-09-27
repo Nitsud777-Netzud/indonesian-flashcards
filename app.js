@@ -1,16 +1,17 @@
 const KEY="indoFlashcards400";
-const defaults={activeUnit:1,completed:[],mastered:[],words:{},queues:{}};
+const defaults={activeUnit:1,completed:[],mastered:[],words:{},queues:{},streak:{lastDay:"",count:0,today:0}};
 let state=load(),introFlipped=false,mode="intro",current=null;
 
-const unitWords=u=>WORDS.filter(w=>w.rank>(u-1)*100&&w.rank<=u*100);
-const unitLabel=u=>u===1?"Most frequent":`Ranks ${(u-1)*100+1}-${u*100}`;
+const unitWords=u=>WORDS.filter(w=>w.rank>(u-1)*10&&w.rank<=u*10);
+const sectionOfUnit=u=>Math.ceil(u/10);
+const unitLabel=u=>`Unit ${u} · #${(u-1)*10+1}-${u*10}`;
 
 function load(){
   try{
     const saved=JSON.parse(localStorage.getItem(KEY)||"null");
     if(!saved)return structuredClone(defaults);
-    const loaded={activeUnit:saved.activeUnit||1,completed:Array.isArray(saved.completed)?saved.completed:[],mastered:Array.isArray(saved.mastered)?saved.mastered:[],words:saved.words||{},queues:saved.queues||{}};
-    [1,2,3,4].forEach(u=>{
+    const loaded={activeUnit:saved.activeUnit||1,completed:Array.isArray(saved.completed)?saved.completed:[],mastered:Array.isArray(saved.mastered)?saved.mastered:[],words:saved.words||{},queues:saved.queues||{},streak:saved.streak||{lastDay:"",count:0,today:0}};
+    [1,2,3,4].forEach(s=>{for(let u=(s-1)*10+1;u<=s*10;u++){
       const key=String(u);
       if(!Array.isArray(loaded.queues[key]))loaded.queues[key]=[];
       const queued=new Set(loaded.queues[key]);
@@ -18,7 +19,8 @@ function load(){
         if(!loaded.mastered.includes(w.rank)&&loaded.words[w.rank]?.introduced&&!queued.has(w.rank))loaded.queues[key].push(w.rank);
       });
       loaded.queues[key]=loaded.queues[key].filter(rank=>unitWords(u).some(w=>w.rank===rank)&&!loaded.mastered.includes(rank));
-    });
+    }}
+    refreshStreak(loaded);
     return loaded;
   }catch{return structuredClone(defaults)}
 }
@@ -60,7 +62,7 @@ function nextCard(){
     return;
   }
 
-  if(masteredCount(state.activeUnit)===100){completeUnit();return}
+  if(masteredCount(state.activeUnit)===10){completeUnit();return}
   current=null;
   render();
 }
@@ -68,7 +70,7 @@ function nextCard(){
 function completeUnit(){
   const finished=state.activeUnit;
   if(!state.completed.includes(finished))state.completed.push(finished);
-  if(finished<4){
+  if(finished<40){
     state.activeUnit=finished+1;
     current=firstUnintroduced(state.activeUnit);
     mode=current?"intro":"typing";
@@ -84,8 +86,8 @@ function render(){
   const u=state.activeUnit;
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("hidden",v.id!=="study"));
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.view==="study"));
-  document.getElementById("unitTitle").textContent=`Unit ${u} - ${unitLabel(u)} - #${(u-1)*100+1}-${u*100}`;
-  document.getElementById("progress").textContent=`${masteredCount(u)}/100 mastered`;
+  document.getElementById("unitTitle").textContent=`Section ${sectionOfUnit(u)} · ${unitLabel(u)}`;
+  document.getElementById("progress").textContent=`${masteredCount(u)}/10 mastered`;
   const card=document.getElementById("card"),controls=document.getElementById("controls");
 
   if(mode==="complete"){
@@ -114,11 +116,12 @@ function render(){
 
   const info=getInfo(current.rank);
   const prompt=info.direction==="indo"?current.indo:current.en;
-  card.className="card";
-  card.innerHTML=`<small>#${current.rank}</small><strong>${escapeHtml(prompt)}</strong><span>Cycle ${info.cycles}/3 · ${info.direction==="indo"?"Indonesian → English":"English → Indonesian"}</span>`;
+  card.className="typing-card";
+  card.innerHTML=`<small>#${current.rank}</small><strong>${escapeHtml(prompt)}</strong><button class="word-audio" id="audioTyping" type="button">🔊 Hear it</button><span>Cycle ${info.cycles}/3 · ${info.direction==="indo"?"Indonesian → English":"English → Indonesian"}</span>`;
   const directionLabel=info.direction==="indo"?"Type the English":"Type the Indonesian";
   const wordLabel=info.direction==="indo"?current.indo:current.en;
   controls.innerHTML=`<div class="typing-direction">${directionLabel} for “${escapeHtml(wordLabel)}”</div><form id="answer"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${directionLabel}" aria-label="${directionLabel}"><button>Check</button></form><div id="feedback" aria-live="polite"></div>`;
+  document.getElementById("audioTyping").onclick=()=>speak(current.indo);
   const input=document.getElementById("input");
   input.focus();
   document.getElementById("answer").onsubmit=e=>{e.preventDefault();answer(input.value)};
@@ -127,6 +130,7 @@ function render(){
 function answer(raw){
   if(!current)return;
   const rank=current.rank;
+  markStudyDay();
   const info=getInfo(rank);
   const expected=info.direction==="indo"?current.en:current.indo;
   const ok=raw.trim().toLocaleLowerCase()===expected.trim().toLocaleLowerCase();
@@ -150,7 +154,7 @@ function answer(raw){
       if(input)input.disabled=true;
       if(button)button.disabled=true;
       const masteredUnit=masteredCount(state.activeUnit);
-      setTimeout(()=>{current=null;if(masteredUnit===100)completeUnit();else nextCard()},850);
+      setTimeout(()=>{current=null;if(masteredUnit===10)completeUnit();else nextCard()},850);
       return;
     }
 
@@ -174,13 +178,21 @@ function answer(raw){
   }
 }
 
+function pstDay(){return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Los_Angeles",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
+function dayDiff(a,b){return Math.round((new Date(b+"T12:00:00Z")-new Date(a+"T12:00:00Z"))/86400000)}
+function refreshStreak(s=state){const today=pstDay(),x=s.streak||{lastDay:"",count:0,today:0};if(x.lastDay&&x.lastDay!==today){if(dayDiff(x.lastDay,today)>1)x.count=0;x.today=0}s.streak=x;return s}
+function markStudyDay(){const today=pstDay(),s=state.streak||{lastDay:"",count:0,today:0};if(s.lastDay===today)s.today++;else{s.count=s.lastDay&&dayDiff(s.lastDay,today)===1?s.count+1:1;s.lastDay=today;s.today=1}state.streak=s;save();renderStreak()}
+function renderStreak(){const el=document.getElementById("streakBar");if(el){const s=state.streak||{count:0,today:0};el.innerHTML=`🔥 ${s.count} day streak · 📚 ${s.today} studied today`}}
+function speak(text){if(!("speechSynthesis" in window))return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="id-ID";u.rate=.88;speechSynthesis.speak(u)}
 function renderUnits(){
   const el=document.getElementById("unitsList");if(!el)return;
-  el.innerHTML=[1,2,3,4].map(u=>{
-    const done=state.completed.includes(u);
-    const count=masteredCount(u);
-    return `<div class="unit ${done?"complete":""}"><div><b>Unit ${u}</b><span>${u===1?"Most frequent · ":""}#${(u-1)*100+1}-${u*100} · ${count}/100 mastered</span></div><button data-u="${u}">${done?"Review":"Study"}</button></div>`;
-  }).join("");
+  let html="";
+  for(let s=1;s<=4;s++){html+=`<section class="section"><h3>Section ${s}</h3><p class="section-label">Words #${(s-1)*100+1}-${s*100}</p><div class="unit-path">`;
+    for(let u=(s-1)*10+1;u<=s*10;u++){const done=state.completed.includes(u),available=u===1||state.completed.includes(u-1);html+=`<button class="unit-node ${done?"done":available?"available":""} ${state.activeUnit===u?"current":""}" data-u="${u}" aria-label="Unit ${u}">${done?"✓":u}</button>`}
+    html+="</div></section>";
+  }
+  el.innerHTML=html;
+  el.querySelectorAll(".unit-node").forEach(b=>b.onclick=()=>openUnit(+b.dataset.u));
   el.querySelectorAll("button").forEach(b=>b.onclick=()=>openUnit(+b.dataset.u));
 }
 
@@ -202,7 +214,7 @@ function renderReview(u){
     const card=document.getElementById("card");
     card.className=`card ${flipped?"flipped":""}`;
     card.innerHTML=`<div class="face front"><small>#${w.rank}</small><strong>${escapeHtml(w.indo)}</strong><span>Tap to flip</span></div><div class="face back"><small>#${w.rank} · English</small><strong>${escapeHtml(w.en)}</strong></div>`;
-    document.getElementById("unitTitle").textContent=`Unit ${u} - ${unitLabel(u)} - Review`;
+    document.getElementById("unitTitle").textContent=`Section ${sectionOfUnit(u)} · ${unitLabel(u)} · Review`;
     document.getElementById("progress").textContent=`${index+1}/${words.length} review`;
     document.getElementById("controls").innerHTML=`<button id="prev" ${index===0?"disabled":""}>Previous</button><button id="flip">Flip</button><button id="next" ${index===words.length-1?"disabled":""}>Next</button><button id="back">Back to Units</button>`;
     document.getElementById("flip").onclick=()=>{flipped=!flipped;paint()};
@@ -236,4 +248,4 @@ document.getElementById("card").onclick=e=>{if(mode==="intro"&&e.target.closest(
 document.getElementById("search").oninput=renderDictionary;
 document.getElementById("reset").onclick=()=>{if(confirm("Reset all progress?")){localStorage.removeItem(KEY);location.reload()}};
 
-renderUnits();renderDictionary();nextCard();
+refreshStreak();renderStreak();renderUnits();renderDictionary();nextCard();
