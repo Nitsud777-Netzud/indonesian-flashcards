@@ -19,7 +19,7 @@ function load(){
         if(!loaded.mastered.includes(w.rank)&&loaded.words[w.rank]?.introduced&&!queued.has(w.rank))loaded.queues[key].push(w.rank);
       });
       loaded.queues[key]=loaded.queues[key].filter(rank=>unitWords(u).some(w=>w.rank===rank)&&!loaded.mastered.includes(rank));
-    }}
+    }});
     refreshStreak(loaded);
     return loaded;
   }catch{return structuredClone(defaults)}
@@ -146,22 +146,26 @@ function render(){
 
 function answerTest(raw){
   if(!current)return;
+  const rank=current.rank;
   const expected=testDirection==="indo"?current.en:current.indo;
   const ok=raw.trim().toLocaleLowerCase()===expected.trim().toLocaleLowerCase();
   const fb=document.getElementById("feedback"),form=document.getElementById("answer");
   if(!fb||!form)return;
   const button=form.querySelector("button"),input=form.querySelector("input");
   if(ok){
-    fb.className="correct";fb.textContent="Correct! ✓";if(input)input.disabled=true;if(button)button.disabled=true;
+    testFails[rank]=0;
+    fb.className="correct";fb.textContent="Correct! ✓";
+    if(input)input.disabled=true;if(button)button.disabled=true;
     setTimeout(()=>nextTestCard(),600);
   }else{
-    const returned=failTestWord(current.rank);
-    fb.className="wrong";fb.innerHTML=`Correct answer: <strong>${escapeHtml(expected)}</strong>${returned?"<br>Back to your current unit for more practice.":""}`;
+    const returned=failTestWord(rank);
+    if(!returned)testQueue.push(current);
+    fb.className="wrong";
+    fb.innerHTML=`Correct answer: <strong>${escapeHtml(expected)}</strong>${returned?"<br>Back to your current unit for more practice.":"<br>You’ll see this word again."}`;
     if(input)input.disabled=true;if(button)button.disabled=true;
     setTimeout(()=>nextTestCard(),returned?1400:1000);
   }
 }
-
 function answer(raw){
   if(!current)return;
   const rank=current.rank;
