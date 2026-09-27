@@ -31,16 +31,38 @@ function queue(u){const key=String(u);if(!Array.isArray(state.queues[key]))state
 function deck(u){return queue(u).map(rank=>WORDS.find(w=>w.rank===rank)).filter(Boolean).filter(w=>!isMastered(w.rank))}
 function firstUnintroduced(u){return unitWords(u).find(w=>!isMastered(w.rank)&&!getInfo(w.rank).introduced)}
 function enqueueWord(u,rank){const q=queue(u);if(!q.includes(rank)&&!isMastered(rank)){q.push(rank);save()}}
-function moveCurrentToBottom(){if(!current)return;const q=queue(state.activeUnit);const index=q.indexOf(current.rank);if(index!==-1){q.splice(index,1);q.push(current.rank)}else if(!isMastered(current.rank))q.push(current.rank);save()}
+function moveCurrentToBottom(){
+  if(!current)return;
+  const q=queue(state.activeUnit);
+  const index=q.indexOf(current.rank);
+  if(index!==-1){q.splice(index,1);q.push(current.rank)}
+  else if(!isMastered(current.rank))q.push(current.rank);
+  save();
+}
 function removeCurrentFromQueue(){if(!current)return;const q=queue(state.activeUnit);const index=q.indexOf(current.rank);if(index!==-1)q.splice(index,1);save()}
 
 function nextCard(){
-  const d=deck(state.activeUnit);
-  if(d.length){current=d[0];mode="typing";introFlipped=false;render();return}
   const fresh=firstUnintroduced(state.activeUnit);
-  if(fresh){current=fresh;mode="intro";introFlipped=false;render();return}
+  if(fresh){
+    current=fresh;
+    mode="intro";
+    introFlipped=false;
+    render();
+    return;
+  }
+
+  const d=deck(state.activeUnit);
+  if(d.length){
+    current=d[0];
+    mode="typing";
+    introFlipped=false;
+    render();
+    return;
+  }
+
   if(masteredCount(state.activeUnit)===100){completeUnit();return}
-  current=null;render();
+  current=null;
+  render();
 }
 
 function completeUnit(){
@@ -51,9 +73,11 @@ function completeUnit(){
     current=firstUnintroduced(state.activeUnit);
     mode=current?"intro":"typing";
   }else{
-    current=null;mode="complete";
+    current=null;
+    mode="complete";
   }
-  save();render();
+  save();
+  render();
 }
 
 function render(){
@@ -63,6 +87,7 @@ function render(){
   document.getElementById("unitTitle").textContent=`Unit ${u} - ${unitLabel(u)} - #${(u-1)*100+1}-${u*100}`;
   document.getElementById("progress").textContent=`${masteredCount(u)}/100 mastered`;
   const card=document.getElementById("card"),controls=document.getElementById("controls");
+
   if(mode==="complete"){
     card.className="card";
     card.innerHTML=`<strong>All 400 words mastered!</strong><span>Every unit is complete. Review them from Units.</span>`;
@@ -70,6 +95,7 @@ function render(){
     document.getElementById("unitsBtn").onclick=()=>show("units");
     return;
   }
+
   if(!current){nextCard();return}
 
   if(mode==="intro"){
@@ -77,7 +103,12 @@ function render(){
     card.innerHTML=`<div class="face front"><small>#${current.rank}</small><strong>${escapeHtml(current.indo)}</strong><span>Tap to flip</span></div><div class="face back"><small>#${current.rank} · English</small><strong>${escapeHtml(current.en)}</strong><span>Tap to flip back</span></div>`;
     controls.innerHTML=`<button id="flip">Flip</button><button id="next">Next</button>`;
     document.getElementById("flip").onclick=()=>{introFlipped=!introFlipped;render()};
-    document.getElementById("next").onclick=()=>{setInfo(current.rank,{introduced:true});enqueueWord(state.activeUnit,current.rank);mode="typing";introFlipped=false;render()};
+    document.getElementById("next").onclick=()=>{
+      setInfo(current.rank,{introduced:true});
+      enqueueWord(state.activeUnit,current.rank);
+      current=null;
+      nextCard();
+    };
     return;
   }
 
@@ -86,7 +117,8 @@ function render(){
   card.className="card";
   card.innerHTML=`<small>#${current.rank}</small><strong>${escapeHtml(prompt)}</strong><span>Cycle ${info.cycles}/3 · ${info.direction==="indo"?"Indonesian → English":"English → Indonesian"}</span>`;
   const directionLabel=info.direction==="indo"?"Type the English":"Type the Indonesian";
-  controls.innerHTML=`<div class="typing-direction">${directionLabel}</div><form id="answer"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${directionLabel}" aria-label="${directionLabel}"><button>Check</button></form><div id="feedback" aria-live="polite"></div>`;
+  const wordLabel=info.direction==="indo"?current.indo:current.en;
+  controls.innerHTML=`<div class="typing-direction">${directionLabel} for “${escapeHtml(wordLabel)}”</div><form id="answer"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${directionLabel}" aria-label="${directionLabel}"><button>Check</button></form><div id="feedback" aria-live="polite"></div>`;
   const input=document.getElementById("input");
   input.focus();
   document.getElementById("answer").onsubmit=e=>{e.preventDefault();answer(input.value)};
