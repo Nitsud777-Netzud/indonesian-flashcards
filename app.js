@@ -1,6 +1,6 @@
 const KEY="indoFlashcards400";
 const defaults={activeUnit:1,completed:[],mastered:[],words:{},queues:{},streak:{lastDay:"",count:0,today:0}};
-let state=load(),introFlipped=false,mode="intro",current=null;
+let state=load(),introFlipped=false,mode="intro",current=null,testQueue=[],testIndex=0,testFails={},testDirection="indo";
 
 const unitWords=u=>WORDS.filter(w=>w.rank>(u-1)*10&&w.rank<=u*10);
 const sectionOfUnit=u=>Math.ceil(u/10);
@@ -29,6 +29,11 @@ function getInfo(rank){return state.words[rank]||{introduced:false,cycles:0,dire
 function setInfo(rank,patch){state.words[rank]={...getInfo(rank),...patch};save()}
 function isMastered(rank){return state.mastered.includes(rank)}
 function masteredCount(u){return unitWords(u).filter(w=>isMastered(w.rank)).length}
+function masteredWords(){return WORDS.filter(w=>isMastered(w.rank))}
+function startTest(){const pool=masteredWords();if(!pool.length){alert("Master some words first to start a test.");return}testQueue=[...pool].sort(()=>Math.random()-.5).slice(0,25);testIndex=0;testFails={};testDirection="indo";mode="test";current=testQueue[0];show("study");render()}
+function finishTest(){mode="intro";current=null;show("dictionary");renderDictionary();renderStreak()}
+function failTestWord(rank){testFails[rank]=(testFails[rank]||0)+1;if(testFails[rank]>=3){const w=WORDS.find(x=>x.rank===rank);state.mastered=state.mastered.filter(r=>r!==rank);delete state.words[rank];enqueueWord(state.activeUnit,rank);setInfo(rank,{introduced:true,cycles:0,direction:"indo"});save();return true}return false}
+function nextTestCard(){testIndex++;if(testIndex>=testQueue.length){finishTest();return}current=testQueue[testIndex];testDirection="indo";render()}
 function queue(u){const key=String(u);if(!Array.isArray(state.queues[key]))state.queues[key]=[];return state.queues[key]}
 function deck(u){return queue(u).map(rank=>WORDS.find(w=>w.rank===rank)).filter(Boolean).filter(w=>!isMastered(w.rank))}
 function firstUnintroduced(u){return unitWords(u).find(w=>!isMastered(w.rank)&&!getInfo(w.rank).introduced)}
@@ -90,6 +95,18 @@ function render(){
   document.getElementById("progress").textContent=`${masteredCount(u)}/10 mastered`;
   const card=document.getElementById("card"),controls=document.getElementById("controls");
 
+  if(mode==="test"){
+    if(!current){finishTest();return}
+    const prompt=testDirection==="indo"?current.indo:current.en;
+    card.className="typing-card";
+    card.innerHTML=`<small>Test · ${testIndex+1}/${testQueue.length} · #${current.rank}</small><strong>${escapeHtml(prompt)}</strong><button class="word-audio" id="audioTyping" type="button">🔊 Hear it</button><span>${testDirection==="indo"?"Indonesian → English":"English → Indonesian"} · Misses: ${testFails[current.rank]||0}/3</span>`;
+    controls.innerHTML=`<div class="typing-direction">Test: type the ${testDirection==="indo"?"English":"Indonesian"} translation</div><form id="answer"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Your answer" aria-label="Your answer"><button>Check</button></form><div id="feedback" aria-live="polite"></div>`;
+    document.getElementById("audioTyping").onclick=()=>speak(current.indo);
+    const input=document.getElementById("input");input.focus();
+    document.getElementById("answer").onsubmit=e=>{e.preventDefault();answerTest(input.value)};
+    return;
+  }
+
   if(mode==="complete"){
     card.className="card";
     card.innerHTML=`<strong>All 400 words mastered!</strong><span>Every unit is complete. Review them from Units.</span>`;
@@ -125,6 +142,24 @@ function render(){
   const input=document.getElementById("input");
   input.focus();
   document.getElementById("answer").onsubmit=e=>{e.preventDefault();answer(input.value)};
+}
+
+function answerTest(raw){
+  if(!current)return;
+  const expected=testDirection==="indo"?current.en:current.indo;
+  const ok=raw.trim().toLocaleLowerCase()===expected.trim().toLocaleLowerCase();
+  const fb=document.getElementById("feedback"),form=document.getElementById("answer");
+  if(!fb||!form)return;
+  const button=form.querySelector("button"),input=form.querySelector("input");
+  if(ok){
+    fb.className="correct";fb.textContent="Correct! ✓";if(input)input.disabled=true;if(button)button.disabled=true;
+    setTimeout(()=>nextTestCard(),600);
+  }else{
+    const returned=failTestWord(current.rank);
+    fb.className="wrong";fb.innerHTML=`Correct answer: <strong>${escapeHtml(expected)}</strong>${returned?"<br>Back to your current unit for more practice.":""}`;
+    if(input)input.disabled=true;if(button)button.disabled=true;
+    setTimeout(()=>nextTestCard(),returned?1400:1000);
+  }
 }
 
 function answer(raw){
@@ -188,12 +223,11 @@ function renderUnits(){
   const el=document.getElementById("unitsList");if(!el)return;
   let html="";
   for(let s=1;s<=4;s++){html+=`<section class="section"><h3>Section ${s}</h3><p class="section-label">Words #${(s-1)*100+1}-${s*100}</p><div class="unit-path">`;
-    for(let u=(s-1)*10+1;u<=s*10;u++){const done=state.completed.includes(u),available=u===1||state.completed.includes(u-1);html+=`<button class="unit-node ${done?"done":available?"available":""} ${state.activeUnit===u?"current":""}" data-u="${u}" aria-label="Unit ${u}">${done?"✓":u}</button>`}
+    for(let u=(s-1)*10+1;u<=s*10;u++){const done=state.completed.includes(u),available=u===1||state.completed.includes(u-1),pct=done?100:Math.round(masteredCount(u)/10*100);html+=`<div class="unit-wrap"><button class="unit-node ${done?"done":available?"available":""} ${state.activeUnit===u?"current":""}" data-u="${u}" aria-label="Unit ${u}">${done?"✓":u}</button><div class="unit-progress"><span style="width:${pct}%"></span></div><small>${pct}%</small></div>`}
     html+="</div></section>";
   }
   el.innerHTML=html;
   el.querySelectorAll(".unit-node").forEach(b=>b.onclick=()=>openUnit(+b.dataset.u));
-  el.querySelectorAll("button").forEach(b=>b.onclick=()=>openUnit(+b.dataset.u));
 }
 
 function openUnit(u){
@@ -228,8 +262,10 @@ function renderReview(u){
 function renderDictionary(){
   const q=(document.getElementById("search")?.value||"").trim().toLocaleLowerCase();
   const el=document.getElementById("dictionaryList");if(!el)return;
+  const testButton=`<button class="test-button" id="startTest">🧠 Test 25 random mastered words</button>`;
   const arr=WORDS.filter(w=>isMastered(w.rank)&&(!q||w.indo.toLocaleLowerCase().includes(q)||w.en.toLocaleLowerCase().includes(q)));
-  el.innerHTML=arr.length?arr.map(w=>`<div class="entry"><b>#${w.rank} · ${escapeHtml(w.indo)}</b><span>${escapeHtml(w.en)}</span></div>`).join(""):"<p class='empty'>Your dictionary is empty. Master words to add them.</p>";
+  el.innerHTML=testButton+(arr.length?arr.map(w=>`<div class="entry"><b>#${w.rank} · ${escapeHtml(w.indo)}</b><span>${escapeHtml(w.en)}</span></div>`).join(""):"<p class='empty'>Your dictionary is empty. Master words to add them.</p>");
+  document.getElementById("startTest").onclick=startTest;
 }
 
 function escapeHtml(value){
