@@ -110,7 +110,7 @@ function render(){
 
   if(mode==="complete"){
     card.className="card";
-    card.innerHTML=`<strong>All 400 words mastered!</strong><span>Every unit is complete. Review them from Units.</span>`;
+    card.innerHTML=`<strong>All words mastered!</strong><span>Every unit is complete. Review them from Units.</span>`;
     controls.innerHTML=`<button id="unitsBtn">Review Units</button>`;
     document.getElementById("unitsBtn").onclick=()=>show("units");
     return;
