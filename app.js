@@ -123,7 +123,7 @@ function render(){
     card.innerHTML=`<div class="face front"><small>#${current.rank}</small><strong>${escapeHtml(current.indo)}</strong><span>Tap to flip</span></div><div class="face back"><small>#${current.rank} · English</small><strong>${escapeHtml(current.en)}</strong><span>Tap to flip back</span></div>`;
     controls.innerHTML=`<button id="flip">Flip</button>`;
     document.getElementById("flip").onclick=()=>{introFlipped=!introFlipped;render()};
-    document.getElementById("next").onclick=()=>{
+    /* next is handled by tapping the flipped card */\n    document.getElementById("card").onclick=()=>{
       setInfo(current.rank,{introduced:true});
       enqueueWord(state.activeUnit,current.rank);
       current=null;
