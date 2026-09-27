@@ -1,5 +1,5 @@
 const KEY="indoFlashcards400";
-const defaults={activeUnit:1,completed:[],mastered:[],words:{}};
+const defaults={activeUnit:1,completed:[],mastered:[],words:{},queues:{}};
 let state=load(),introFlipped=false,mode="intro",current=null;
 
 const unitWords=u=>WORDS.filter(w=>w.rank>(u-1)*100&&w.rank<=u*100);
@@ -9,7 +9,17 @@ function load(){
   try{
     const saved=JSON.parse(localStorage.getItem(KEY)||"null");
     if(!saved)return structuredClone(defaults);
-    return {activeUnit:saved.activeUnit||1,completed:Array.isArray(saved.completed)?saved.completed:[],mastered:Array.isArray(saved.mastered)?saved.mastered:[],words:saved.words||{}};
+    const loaded={activeUnit:saved.activeUnit||1,completed:Array.isArray(saved.completed)?saved.completed:[],mastered:Array.isArray(saved.mastered)?saved.mastered:[],words:saved.words||{},queues:saved.queues||{}};
+    [1,2,3,4].forEach(u=>{
+      const key=String(u);
+      if(!Array.isArray(loaded.queues[key]))loaded.queues[key]=[];
+      const queued=new Set(loaded.queues[key]);
+      unitWords(u).forEach(w=>{
+        if(!loaded.mastered.includes(w.rank)&&loaded.words[w.rank]?.introduced&&!queued.has(w.rank))loaded.queues[key].push(w.rank);
+      });
+      loaded.queues[key]=loaded.queues[key].filter(rank=>unitWords(u).some(w=>w.rank===rank)&&!loaded.mastered.includes(rank));
+    });
+    return loaded;
   }catch{return structuredClone(defaults)}
 }
 function save(){localStorage.setItem(KEY,JSON.stringify(state))}
@@ -17,8 +27,12 @@ function getInfo(rank){return state.words[rank]||{introduced:false,cycles:0,dire
 function setInfo(rank,patch){state.words[rank]={...getInfo(rank),...patch};save()}
 function isMastered(rank){return state.mastered.includes(rank)}
 function masteredCount(u){return unitWords(u).filter(w=>isMastered(w.rank)).length}
-function deck(u){return unitWords(u).filter(w=>!isMastered(w.rank)&&getInfo(w.rank).introduced)}
+function queue(u){const key=String(u);if(!Array.isArray(state.queues[key]))state.queues[key]=[];return state.queues[key]}
+function deck(u){return queue(u).map(rank=>WORDS.find(w=>w.rank===rank)).filter(Boolean).filter(w=>!isMastered(w.rank))}
 function firstUnintroduced(u){return unitWords(u).find(w=>!isMastered(w.rank)&&!getInfo(w.rank).introduced)}
+function enqueueWord(u,rank){const q=queue(u);if(!q.includes(rank)&&!isMastered(rank)){q.push(rank);save()}}
+function moveCurrentToBottom(){if(!current)return;const q=queue(state.activeUnit);const index=q.indexOf(current.rank);if(index!==-1){q.splice(index,1);q.push(current.rank)}else if(!isMastered(current.rank))q.push(current.rank);save()}
+function removeCurrentFromQueue(){if(!current)return;const q=queue(state.activeUnit);const index=q.indexOf(current.rank);if(index!==-1)q.splice(index,1);save()}
 
 function nextCard(){
   const d=deck(state.activeUnit);
@@ -63,7 +77,7 @@ function render(){
     card.innerHTML=`<div class="face front"><small>#${current.rank}</small><strong>${escapeHtml(current.indo)}</strong><span>Tap to flip</span></div><div class="face back"><small>#${current.rank} · English</small><strong>${escapeHtml(current.en)}</strong><span>Tap to flip back</span></div>`;
     controls.innerHTML=`<button id="flip">Flip</button><button id="next">Next</button>`;
     document.getElementById("flip").onclick=()=>{introFlipped=!introFlipped;render()};
-    document.getElementById("next").onclick=()=>{setInfo(current.rank,{introduced:true});mode="typing";introFlipped=false;render()};
+    document.getElementById("next").onclick=()=>{setInfo(current.rank,{introduced:true});enqueueWord(state.activeUnit,current.rank);mode="typing";introFlipped=false;render()};
     return;
   }
 
@@ -71,7 +85,8 @@ function render(){
   const prompt=info.direction==="indo"?current.indo:current.en;
   card.className="card";
   card.innerHTML=`<small>#${current.rank}</small><strong>${escapeHtml(prompt)}</strong><span>Cycle ${info.cycles}/3 · ${info.direction==="indo"?"Indonesian → English":"English → Indonesian"}</span>`;
-  controls.innerHTML=`<form id="answer"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Type your answer"><button>Check</button></form><div id="feedback"></div>`;
+  const directionLabel=info.direction==="indo"?"Type the English":"Type the Indonesian";
+  controls.innerHTML=`<div class="typing-direction">${directionLabel}</div><form id="answer"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${directionLabel}" aria-label="${directionLabel}"><button>Check</button></form><div id="feedback" aria-live="polite"></div>`;
   const input=document.getElementById("input");
   input.focus();
   document.getElementById("answer").onsubmit=e=>{e.preventDefault();answer(input.value)};
@@ -79,32 +94,51 @@ function render(){
 
 function answer(raw){
   if(!current)return;
-  const info=getInfo(current.rank);
+  const rank=current.rank;
+  const info=getInfo(rank);
   const expected=info.direction==="indo"?current.en:current.indo;
   const ok=raw.trim().toLocaleLowerCase()===expected.trim().toLocaleLowerCase();
   const fb=document.getElementById("feedback");
+  const form=document.getElementById("answer");
+  if(!fb||!form)return;
+  const button=form.querySelector("button"),input=form.querySelector("input");
+
   if(ok){
     let cycles=info.cycles;
     const nextDirection=info.direction==="indo"?"en":"indo";
     if(info.direction==="en")cycles++;
+
     if(cycles>=3){
-      if(!state.mastered.includes(current.rank))state.mastered.push(current.rank);
-      delete state.words[current.rank];
+      if(!state.mastered.includes(rank))state.mastered.push(rank);
+      removeCurrentFromQueue();
+      delete state.words[rank];
       save();
-      fb.className="correct";fb.textContent="Correct — mastered!";
+      fb.className="correct";
+      fb.textContent="Correct! Word mastered! 🎉";
+      if(input)input.disabled=true;
+      if(button)button.disabled=true;
       const masteredUnit=masteredCount(state.activeUnit);
-      setTimeout(()=>{current=null;if(masteredUnit===100)completeUnit();else nextCard()},500);
+      setTimeout(()=>{current=null;if(masteredUnit===100)completeUnit();else nextCard()},850);
       return;
     }
-    setInfo(current.rank,{cycles,direction:nextDirection});
-    fb.className="correct";fb.textContent="Correct!";
+
+    setInfo(rank,{cycles,direction:nextDirection});
+    moveCurrentToBottom();
+    fb.className="correct";
+    fb.textContent="Correct! ✓";
+    if(input)input.disabled=true;
+    if(button)button.disabled=true;
     current=null;
-    setTimeout(()=>{current=deck(state.activeUnit)[0]||null;render()},450);
+    setTimeout(()=>nextCard(),700);
   }else{
-    fb.className="wrong";fb.innerHTML=`Correct answer: <strong>${escapeHtml(expected)}</strong>`;
-    setInfo(current.rank,{cycles:0,direction:"indo"});
+    setInfo(rank,{cycles:0,direction:"indo"});
+    moveCurrentToBottom();
+    fb.className="wrong";
+    fb.innerHTML=`Correct answer: <strong>${escapeHtml(expected)}</strong>`;
+    if(input)input.disabled=true;
+    if(button)button.disabled=true;
     current=null;
-    setTimeout(()=>{current=deck(state.activeUnit)[0]||null;render()},900);
+    setTimeout(()=>nextCard(),1200);
   }
 }
 
