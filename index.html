@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Indonesian Flashcards</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header><h1>Indonesian Flashcards</h1><p>400 Most Frequent Words</p></header>
+<nav><button data-view="study">Study</button><button data-view="units">Units</button><button data-view="dictionary">Dictionary</button></nav>
+<main>
+<section id="study" class="view"><h2 id="unitTitle"></h2><div id="progress"></div><div id="card" class="card"></div><div id="controls"></div></section>
+<section id="units" class="view hidden"><h2>Units</h2><div id="unitsList"></div></section>
+<section id="dictionary" class="view hidden"><h2>Dictionary</h2><input id="search" placeholder="Search"><div id="dictionaryList"></div></section>
+</main>
+<button id="reset">Reset Progress</button>
+<script src="words.js"></script><script src="app.js"></script>
+</body>
+</html>
