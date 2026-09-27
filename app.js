@@ -121,7 +121,7 @@ function render(){
   if(mode==="intro"){
     card.className=`card ${introFlipped?"flipped":""}`;
     card.innerHTML=`<div class="face front"><small>#${current.rank}</small><strong>${escapeHtml(current.indo)}</strong><span>Tap to flip</span></div><div class="face back"><small>#${current.rank} · English</small><strong>${escapeHtml(current.en)}</strong><span>Tap to flip back</span></div>`;
-    controls.innerHTML=`<button id="flip">Flip</button><button id="next">Next</button>`;
+    controls.innerHTML=`<button id="flip">Flip</button>`;
     document.getElementById("flip").onclick=()=>{introFlipped=!introFlipped;render()};
     document.getElementById("next").onclick=()=>{
       setInfo(current.rank,{introduced:true});
@@ -173,7 +173,7 @@ function answer(raw){
   markStudyDay();
   const info=getInfo(rank);
   const expected=info.direction==="indo"?current.en:current.indo;
-  const ok=raw.trim().toLocaleLowerCase()===expected.trim().toLocaleLowerCase();
+  const ok=answersMatch(raw,expected);
   const fb=document.getElementById("feedback");
   const form=document.getElementById("answer");
   if(!fb||!form)return;
