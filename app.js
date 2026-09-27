@@ -30,6 +30,7 @@ function setInfo(rank,patch){state.words[rank]={...getInfo(rank),...patch};save(
 function isMastered(rank){return state.mastered.includes(rank)}
 function masteredCount(u){return unitWords(u).filter(w=>isMastered(w.rank)).length}
 function masteredWords(){return WORDS.filter(w=>isMastered(w.rank))}
+function answersMatch(raw,expected){const input=raw.trim().toLocaleLowerCase();return expected.split("/").map(x=>x.trim().toLocaleLowerCase()).filter(Boolean).includes(input)}
 function startTest(){const pool=masteredWords();if(!pool.length){alert("Master some words first to start a test.");return}testQueue=[...pool].sort(()=>Math.random()-.5).slice(0,25);testIndex=0;testFails={};testDirection="indo";mode="test";current=testQueue[0];show("study");render()}
 function finishTest(){mode="intro";current=null;show("dictionary");renderDictionary();renderStreak()}
 function failTestWord(rank){testFails[rank]=(testFails[rank]||0)+1;if(testFails[rank]>=3){const w=WORDS.find(x=>x.rank===rank);state.mastered=state.mastered.filter(r=>r!==rank);delete state.words[rank];enqueueWord(state.activeUnit,rank);setInfo(rank,{introduced:true,cycles:0,direction:"indo"});save();return true}return false}
@@ -148,7 +149,7 @@ function answerTest(raw){
   if(!current)return;
   const rank=current.rank;
   const expected=testDirection==="indo"?current.en:current.indo;
-  const ok=raw.trim().toLocaleLowerCase()===expected.trim().toLocaleLowerCase();
+  const ok=answersMatch(raw,expected);
   const fb=document.getElementById("feedback"),form=document.getElementById("answer");
   if(!fb||!form)return;
   const button=form.querySelector("button"),input=form.querySelector("input");
@@ -284,7 +285,7 @@ function show(v){
 }
 
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>show(b.dataset.view));
-document.getElementById("card").onclick=e=>{if(mode==="intro"&&e.target.closest(".card")){introFlipped=!introFlipped;render()}};
+document.getElementById("card").onclick=e=>{if(mode==="intro"&&e.target.closest(".card")){if(introFlipped){setInfo(current.rank,{introduced:true});enqueueWord(state.activeUnit,current.rank);current=null;nextCard()}else{introFlipped=true;render()}}};
 document.getElementById("search").oninput=renderDictionary;
 document.getElementById("reset").onclick=()=>{if(confirm("Reset all progress?")){localStorage.removeItem(KEY);location.reload()}};
 
